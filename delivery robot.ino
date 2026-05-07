@@ -32,586 +32,154 @@ Adafruit_VL53L0X lox = Adafruit_VL53L0X();
 #define LIDAR_SAFE_MM   500
 #define ULTRA_SAFE_CM   5
 
-// Robot state
-volatile bool emergencyStop = false;
+bool emergencyStop = false;
 
-// Commands
-struct Command {
-  String direction;
-  int distance;
-};
-
-Command commands[20];
-int cmdCount = 0;
-
-// HTML Page with improved UI
+// HTML Page
 const char* htmlPage = R"html(
 <!DOCTYPE html>
-<html lang="en">
+<html>
 <head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Nexus - Robot Control</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Nexus</title>
 <style>
-  * {
-    margin: 0;
-    padding: 0;
-    box-sizing: border-box;
-  }
-
-  :root {
-    --primary: #00d9ff;
-    --secondary: #ff006e;
-    --dark-bg: #0a0e27;
-    --card-bg: #131a3d;
-    --text-primary: #ffffff;
-    --text-secondary: #a0aec0;
-    --success: #10b981;
-    --warning: #f59e0b;
-    --danger: #ef4444;
-    --border: #1e2749;
-  }
-
-  body {
-    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-    background: linear-gradient(135deg, var(--dark-bg) 0%, #0f1535 100%);
-    color: var(--text-primary);
-    overflow-x: hidden;
-    min-height: 100vh;
-    padding: 10px;
-  }
-
-  .container {
-    max-width: 500px;
-    margin: 0 auto;
-  }
-
-  /* Header */
-  .header {
-    text-align: center;
-    padding: 20px 0;
-    margin-bottom: 20px;
-    border-bottom: 2px solid var(--border);
-    position: relative;
-    animation: slideDown 0.6s ease-out;
-  }
-
-  @keyframes slideDown {
-    from {
-      opacity: 0;
-      transform: translateY(-20px);
-    }
-    to {
-      opacity: 1;
-      transform: translateY(0);
-    }
-  }
-
-  .header h1 {
-    font-size: 2.5em;
-    font-weight: 900;
-    background: linear-gradient(135deg, var(--primary) 0%, var(--secondary) 100%);
-    -webkit-background-clip: text;
-    -webkit-text-fill-color: transparent;
-    background-clip: text;
-    letter-spacing: 2px;
-    text-transform: uppercase;
-    margin-bottom: 5px;
-  }
-
-  .header p {
-    color: var(--text-secondary);
-    font-size: 0.9em;
-    letter-spacing: 1px;
-  }
-
-  /* Emergency Stop Button */
-  .emergency-stop-container {
-    margin-bottom: 20px;
-  }
-
-  .btn-emergency {
-    width: 100%;
-    padding: 16px;
-    font-size: 18px;
-    font-weight: bold;
-    border: 3px solid var(--danger);
-    background: linear-gradient(135deg, var(--danger) 0%, #dc2626 100%);
-    color: white;
-    border-radius: 12px;
-    cursor: pointer;
-    transition: all 0.3s ease;
-    text-transform: uppercase;
-    letter-spacing: 1px;
-    box-shadow: 0 0 20px rgba(239, 68, 68, 0.3);
-    animation: pulse 2s infinite;
-  }
-
-  @keyframes pulse {
-    0%, 100% {
-      box-shadow: 0 0 20px rgba(239, 68, 68, 0.3);
-    }
-    50% {
-      box-shadow: 0 0 30px rgba(239, 68, 68, 0.6);
-    }
-  }
-
-  .btn-emergency:active {
-    transform: scale(0.98);
-    box-shadow: 0 0 40px rgba(239, 68, 68, 0.8);
-  }
-
-  /* Section */
-  .section {
-    background: var(--card-bg);
-    border: 1px solid var(--border);
-    border-radius: 16px;
-    padding: 24px;
-    margin-bottom: 20px;
-    animation: fadeIn 0.6s ease-out;
-  }
-
-  @keyframes fadeIn {
-    from {
-      opacity: 0;
-      transform: translateY(10px);
-    }
-    to {
-      opacity: 1;
-      transform: translateY(0);
-    }
-  }
-
-  .section h2 {
-    font-size: 1.3em;
-    margin-bottom: 16px;
-    color: var(--primary);
-    text-transform: uppercase;
-    letter-spacing: 1px;
-  }
-
-  .section h3 {
-    font-size: 1em;
-    margin-bottom: 12px;
-    color: var(--text-secondary);
-  }
-
-  /* Direction Grid */
-  .direction-grid {
-    display: grid;
-    grid-template-columns: 1fr 1fr;
-    gap: 12px;
-    margin-bottom: 16px;
-  }
-
-  .direction-full {
-    grid-column: 1 / -1;
-  }
-
-  /* Button Styles */
-  .btn {
-    padding: 14px 20px;
-    font-size: 16px;
-    font-weight: 600;
-    border: 2px solid var(--primary);
-    background: rgba(0, 217, 255, 0.1);
-    color: var(--primary);
-    border-radius: 10px;
-    cursor: pointer;
-    transition: all 0.3s ease;
-    text-transform: uppercase;
-    letter-spacing: 0.5px;
-    position: relative;
-    overflow: hidden;
-  }
-
-  .btn::before {
-    content: '';
-    position: absolute;
-    top: 0;
-    left: -100%;
-    width: 100%;
-    height: 100%;
-    background: rgba(0, 217, 255, 0.2);
-    transition: left 0.3s ease;
-    z-index: -1;
-  }
-
-  .btn:hover::before {
-    left: 0;
-  }
-
-  .btn:active {
-    background: var(--primary);
-    color: var(--dark-bg);
-    transform: scale(0.98);
-  }
-
-  .btn-sm {
-    padding: 10px 14px;
-    font-size: 14px;
-    width: 50px;
-  }
-
-  .btn-success {
-    border-color: var(--success);
-    color: var(--success);
-    background: rgba(16, 185, 129, 0.1);
-  }
-
-  .btn-success:active {
-    background: var(--success);
-    color: var(--dark-bg);
-  }
-
-  .btn-danger {
-    border-color: var(--danger);
-    color: var(--danger);
-    background: rgba(239, 68, 68, 0.1);
-  }
-
-  .btn-danger:active {
-    background: var(--danger);
-    color: white;
-  }
-
-  /* Distance Display */
-  .distance-display {
-    background: linear-gradient(135deg, rgba(0, 217, 255, 0.1), rgba(255, 0, 110, 0.1));
-    border: 2px solid var(--primary);
-    border-radius: 12px;
-    padding: 20px;
-    text-align: center;
-    margin: 16px 0;
-  }
-
-  .distance-display p {
-    color: var(--text-secondary);
-    font-size: 0.9em;
-    margin-bottom: 8px;
-  }
-
-  #distVal {
-    font-size: 2.8em;
-    font-weight: 900;
-    color: var(--primary);
-    display: block;
-    margin: 8px 0;
-  }
-
-  .distance-unit {
-    color: var(--text-secondary);
-    font-size: 1.1em;
-  }
-
-  /* Control Grid */
-  .control-grid {
-    display: grid;
-    grid-template-columns: 1fr 1fr 1fr;
-    gap: 10px;
-    align-items: center;
-    margin: 16px 0;
-  }
-
-  /* Keyboard Input */
-  .keyboard-input {
-    background: rgba(0, 217, 255, 0.05);
-    border: 2px solid var(--border);
-    border-radius: 10px;
-    padding: 12px;
-    margin: 16px 0;
-  }
-
+  body { font-family: Arial; text-align: center; background: #1a1a2e; color: white; padding: 20px; }
+  h1 { color: #e94560; }
+  .btn { background: #16213e; border: 2px solid #e94560; color: white;
+         padding: 15px 30px; margin: 8px; font-size: 18px; border-radius: 10px;
+         cursor: pointer; width: 140px; }
+  .btn:active { background: #e94560; }
+  .btn-sm { padding: 10px 20px; font-size: 16px; width: 60px; }
+  .btn-green { border-color: #00ff88; }
+  .btn-green:active { background: #00ff88; color: black; }
+  .btn-red { border-color: #ff4444; }
+  .btn-stop { background: #ff2222; border-color: #ffffff; color: white; width: 260px; font-weight: bold; }
+  .btn-stop:active { background: white; color: #ff2222; }
+  .section { margin: 20px auto; max-width: 400px; }
   #distInput {
-    width: 100%;
-    padding: 12px;
-    font-size: 16px;
-    background: rgba(0, 217, 255, 0.1);
-    border: 2px solid var(--primary);
+    width: 120px;
+    padding: 10px;
+    font-size: 24px;
+    text-align: center;
     border-radius: 8px;
-    color: var(--primary);
-    text-align: center;
-    font-weight: bold;
+    border: 2px solid #00ff88;
+    background: #16213e;
+    color: white;
   }
-
-  #distInput::placeholder {
-    color: var(--text-secondary);
-  }
-
-  #distInput:focus {
-    outline: none;
-    border-color: var(--secondary);
-    box-shadow: 0 0 10px rgba(0, 217, 255, 0.3);
-  }
-
-  /* Command List */
-  #cmdList {
-    background: rgba(0, 217, 255, 0.05);
-    border: 1px solid var(--border);
-    border-radius: 10px;
-    padding: 12px;
-    min-height: 50px;
-    font-size: 13px;
-    line-height: 1.6;
-    max-height: 200px;
-    overflow-y: auto;
-  }
-
-  #cmdList::-webkit-scrollbar {
-    width: 6px;
-  }
-
-  #cmdList::-webkit-scrollbar-track {
-    background: rgba(0, 217, 255, 0.05);
-    border-radius: 3px;
-  }
-
-  #cmdList::-webkit-scrollbar-thumb {
-    background: var(--primary);
-    border-radius: 3px;
-  }
-
-  .cmd-item {
-    background: rgba(0, 217, 255, 0.1);
-    padding: 8px 12px;
-    border-radius: 6px;
-    margin-bottom: 6px;
-    border-left: 3px solid var(--primary);
-  }
-
-  /* Status */
-  #status {
-    color: var(--success);
-    font-size: 13px;
-    margin-top: 12px;
-    padding: 12px;
-    background: rgba(16, 185, 129, 0.1);
-    border-left: 3px solid var(--success);
-    border-radius: 6px;
-    display: none;
-  }
-
-  #status.show {
-    display: block;
-    animation: slideIn 0.3s ease;
-  }
-
-  #status.error {
-    color: var(--danger);
-    background: rgba(239, 68, 68, 0.1);
-    border-left-color: var(--danger);
-  }
-
-  @keyframes slideIn {
-    from {
-      opacity: 0;
-      transform: translateX(-10px);
-    }
-    to {
-      opacity: 1;
-      transform: translateX(0);
-    }
-  }
-
-  /* Hidden Class */
-  .hidden {
-    display: none !important;
-  }
-
-  /* Direction Label */
-  .dir-label {
-    background: rgba(0, 217, 255, 0.15);
-    border: 1px solid var(--primary);
-    border-radius: 8px;
-    padding: 12px;
-    text-align: center;
-    margin: 12px 0;
-    font-weight: bold;
-    color: var(--primary);
-  }
-
-  /* Summary Label */
-  .summary-label {
-    background: linear-gradient(135deg, rgba(0, 217, 255, 0.15), rgba(255, 0, 110, 0.15));
-    border: 2px solid var(--border);
-    border-radius: 12px;
-    padding: 16px;
-    text-align: center;
-    margin: 16px 0;
-    font-size: 1.1em;
-    font-weight: bold;
-  }
-
-  /* Button Row */
-  .button-row {
-    display: grid;
-    grid-template-columns: 1fr 1fr;
-    gap: 10px;
-    margin-top: 16px;
-  }
-
-  .button-row.full {
-    grid-template-columns: 1fr;
-  }
-
-  /* Responsive */
-  @media (max-width: 480px) {
-    .header h1 {
-      font-size: 2em;
-    }
-
-    .section {
-      padding: 16px;
-    }
-
-    .btn {
-      padding: 12px 16px;
-      font-size: 14px;
-    }
-
-    #distVal {
-      font-size: 2.2em;
-    }
-  }
+  #cmdList { background: #16213e; padding: 10px; border-radius: 10px;
+             min-height: 50px; margin: 10px 0; font-size: 14px; white-space: pre-line; }
+  .hidden { display: none; }
+  #status { color: #00ff88; font-size: 14px; margin-top: 10px; }
 </style>
 </head>
 <body>
 
-<div class="container">
-  <!-- Header -->
-  <div class="header">
-    <h1>⚡ Nexus</h1>
-    <p>Advanced Robot Control System</p>
+<h1>Nexus</h1>
+
+<div class="section">
+  <button class="btn btn-stop" onclick="emergencyStopNow()">EMERGENCY STOP</button>
+</div>
+
+<div class="section" id="stepDirection">
+  <h2>Select Direction</h2>
+  <div>
+    <button class="btn" onclick="selectDir('FORWARD')">Forward</button>
   </div>
-
-  <!-- Emergency Stop -->
-  <div class="emergency-stop-container">
-    <button class="btn-emergency" onclick="triggerEmergencyStop()">🛑 EMERGENCY STOP</button>
+  <div>
+    <button class="btn" onclick="selectDir('LEFT')">Left</button>
+    <button class="btn" onclick="selectDir('RIGHT')">Right</button>
   </div>
-
-  <!-- Step 1: Direction Selection -->
-  <div class="section" id="stepDirection">
-    <h2>Select Direction</h2>
-    <div class="direction-grid">
-      <button class="btn direction-full" onclick="selectDir('FORWARD')">⬆️ Forward</button>
-    </div>
-    <div class="direction-grid">
-      <button class="btn" onclick="selectDir('LEFT')">⬅️ Left</button>
-      <button class="btn" onclick="selectDir('RIGHT')">➡️ Right</button>
-    </div>
-    <div class="direction-grid">
-      <button class="btn direction-full" onclick="selectDir('BACKWARD')">⬇️ Backward</button>
-    </div>
+  <div>
+    <button class="btn" onclick="selectDir('BACKWARD')">Backward</button>
   </div>
+</div>
 
-  <!-- Step 2: Distance Selection -->
-  <div class="section hidden" id="stepDistance">
-    <h2>Set Distance</h2>
-    
-    <div class="dir-label">
-      Direction: <span id="dirLabel"></span>
-    </div>
+<div class="section hidden" id="stepDistance">
+  <h2>Set Distance (cm)</h2>
+  <p>Direction: <b id="dirLabel"></b></p>
 
-    <div class="distance-display">
-      <p>Distance</p>
-      <span id="distVal">10</span>
-      <span class="distance-unit">cm</span>
-    </div>
+  <button class="btn btn-sm"
+    onmousedown="startHold(-5)" onmouseup="stopHold()" onmouseleave="stopHold()"
+    ontouchstart="startHold(-5)" ontouchend="stopHold()">-</button>
 
-    <!-- Button Controls -->
-    <div class="control-grid">
-      <button class="btn btn-sm" onmousedown="startDecrement()" onmouseup="stopIncrement()" ontouchstart="startDecrement()" ontouchend="stopIncrement()">−</button>
-      <button class="btn btn-sm" style="visibility: hidden;"></button>
-      <button class="btn btn-sm" onmousedown="startIncrement()" onmouseup="stopIncrement()" ontouchstart="startIncrement()" ontouchend="stopIncrement()">+</button>
-    </div>
+  <input id="distInput" type="number" min="5" value="10" oninput="setDistanceFromInput()">
 
-    <!-- Keyboard Input -->
-    <div class="keyboard-input">
-      <p style="color: var(--text-secondary); font-size: 0.9em; margin-bottom: 8px;">Or enter value directly:</p>
-      <input type="number" id="distInput" placeholder="Enter cm" min="5" max="200">
-    </div>
+  <button class="btn btn-sm"
+    onmousedown="startHold(5)" onmouseup="stopHold()" onmouseleave="stopHold()"
+    ontouchstart="startHold(5)" ontouchend="stopHold()">+</button>
 
-    <!-- Actions -->
-    <div class="button-row">
-      <button class="btn btn-success" onclick="showOptions()">✓ Confirm</button>
-      <button class="btn btn-danger" onclick="goBack()">✕ Back</button>
-    </div>
-  </div>
+  <br><br>
+  <button class="btn btn-green" onclick="showOptions()">Confirm</button>
+  <button class="btn btn-red" onclick="goBack()">Back</button>
+</div>
 
-  <!-- Step 3: Options -->
-  <div class="section hidden" id="stepOptions">
-    <h2>Execute Command</h2>
-    
-    <div class="summary-label">
-      <span id="summaryLabel"></span>
-    </div>
+<div class="section hidden" id="stepOptions">
+  <h2>What next?</h2>
+  <p><b id="summaryLabel"></b></p>
+  <button class="btn btn-green" onclick="addCommand()">Add More</button>
+  <button class="btn" onclick="executeCommands()">Execute</button>
+  <button class="btn btn-red" onclick="cancelAll()">Cancel All</button>
+</div>
 
-    <div class="button-row full">
-      <button class="btn btn-success" onclick="addCommand()">+ Add More Commands</button>
-    </div>
-    <div class="button-row full">
-      <button class="btn" onclick="executeCommands()" style="border-color: var(--primary); grid-column: 1 / -1;">▶️ Execute All</button>
-    </div>
-    <div class="button-row full">
-      <button class="btn btn-danger" onclick="cancelAll()" style="grid-column: 1 / -1;">✕ Cancel All</button>
-    </div>
-  </div>
-
-  <!-- Command Queue -->
-  <div class="section">
-    <h3>Command Queue</h3>
-    <div id="cmdList">Empty</div>
-    <div id="status"></div>
-  </div>
+<div class="section">
+  <h3>Command Queue:</h3>
+  <div id="cmdList">Empty</div>
+  <p id="status"></p>
 </div>
 
 <script>
 let selectedDir = '';
 let distVal = 10;
 let cmdQueue = [];
-let incrementInterval = null;
-let decrementInterval = null;
+let holdTimer = null;
 
 function selectDir(dir) {
   selectedDir = dir;
   document.getElementById('dirLabel').innerText = dir;
   distVal = 10;
-  document.getElementById('distVal').innerText = distVal;
-  document.getElementById('distInput').value = '';
+  updateDistanceDisplay();
   show('stepDistance');
 }
 
-function startIncrement() {
-  changeVal(5);
-  incrementInterval = setInterval(() => changeVal(5), 150);
-}
-
-function startDecrement() {
-  changeVal(-5);
-  decrementInterval = setInterval(() => changeVal(-5), 150);
-}
-
-function stopIncrement() {
-  clearInterval(incrementInterval);
-  clearInterval(decrementInterval);
-}
-
-function changeVal(delta) {
-  distVal = Math.max(5, Math.min(200, distVal + delta));
-  document.getElementById('distVal').innerText = distVal;
+function updateDistanceDisplay() {
   document.getElementById('distInput').value = distVal;
 }
 
-document.getElementById('distInput')?.addEventListener('input', (e) => {
-  let val = parseInt(e.target.value);
-  if (!isNaN(val)) {
-    distVal = Math.max(5, Math.min(200, val));
-    document.getElementById('distVal').innerText = distVal;
+function setDistanceFromInput() {
+  let val = parseInt(document.getElementById('distInput').value);
+
+  if (isNaN(val) || val < 5) {
+    val = 5;
   }
-});
+
+  distVal = val;
+}
+
+function changeVal(delta) {
+  setDistanceFromInput();
+  distVal = Math.max(5, distVal + delta);
+  updateDistanceDisplay();
+}
+
+function startHold(delta) {
+  changeVal(delta);
+  stopHold();
+
+  holdTimer = setInterval(() => {
+    changeVal(delta);
+  }, 150);
+}
+
+function stopHold() {
+  if (holdTimer) {
+    clearInterval(holdTimer);
+    holdTimer = null;
+  }
+}
 
 function showOptions() {
-  document.getElementById('summaryLabel').innerText = `${selectedDir} → ${distVal} cm`;
+  setDistanceFromInput();
+  updateDistanceDisplay();
+  document.getElementById('summaryLabel').innerText = selectedDir + ' ' + distVal + ' cm';
   show('stepOptions');
 }
 
@@ -619,14 +187,10 @@ function addCommand() {
   cmdQueue.push(selectedDir + ':' + distVal);
   updateList();
   show('stepDirection');
-  showStatus('Command added!', 'success');
 }
 
 function executeCommands() {
-  if (cmdQueue.length === 0 && distVal > 0) {
-    cmdQueue.push(selectedDir + ':' + distVal);
-  }
-
+  cmdQueue.push(selectedDir + ':' + distVal);
   updateList();
 
   let cmds = cmdQueue.join(',');
@@ -634,13 +198,21 @@ function executeCommands() {
   fetch('/execute?cmds=' + encodeURIComponent(cmds))
     .then(r => r.text())
     .then(t => {
-      showStatus(t, 'success');
+      document.getElementById('status').innerText = t;
       cmdQueue = [];
       updateList();
       show('stepDirection');
-    })
-    .catch(e => {
-      showStatus('Error: ' + e, 'error');
+    });
+}
+
+function emergencyStopNow() {
+  fetch('/stop')
+    .then(r => r.text())
+    .then(t => {
+      document.getElementById('status').innerText = t;
+      cmdQueue = [];
+      updateList();
+      show('stepDirection');
     });
 }
 
@@ -648,7 +220,7 @@ function cancelAll() {
   cmdQueue = [];
   updateList();
   show('stepDirection');
-  showStatus('All commands cancelled.', 'success');
+  document.getElementById('status').innerText = 'Cancelled.';
 }
 
 function goBack() {
@@ -665,32 +237,12 @@ function show(id) {
 function updateList() {
   let el = document.getElementById('cmdList');
 
-  if (cmdQueue.length === 0) {
-    el.innerHTML = 'Empty';
+  if (cmdQueue.length == 0) {
+    el.innerText = 'Empty';
     return;
   }
 
-  el.innerHTML = cmdQueue.map((c, i) => {
-    let parts = c.split(':');
-    return `<div class="cmd-item">${i + 1}. ${parts[0]} → ${parts[1]} cm</div>`;
-  }).join('');
-}
-
-function showStatus(msg, type = 'success') {
-  let el = document.getElementById('status');
-  el.innerText = msg;
-  el.className = 'show ' + (type === 'error' ? 'error' : '');
-  setTimeout(() => {
-    el.classList.remove('show');
-  }, 5000);
-}
-
-function triggerEmergencyStop() {
-  fetch('/emergency-stop')
-    .then(r => r.text())
-    .then(t => {
-      showStatus('⚠️ EMERGENCY STOP ACTIVATED', 'error');
-    });
+  el.innerText = cmdQueue.map((c, i) => (i + 1) + '. ' + c.replace(':', ' -> ') + ' cm').join('\n');
 }
 </script>
 
@@ -758,6 +310,19 @@ long getUltrasonicCM() {
   return duration / 58;
 }
 
+// Anti-theft lift buzzer.
+// If the robot is lifted above 5 cm, buzzer turns ON.
+void checkLiftAlarm() {
+  long dist = getUltrasonicCM();
+
+  if (dist > ULTRA_SAFE_CM) {
+    digitalWrite(BUZZER, HIGH);
+  } 
+  else {
+    digitalWrite(BUZZER, LOW);
+  }
+}
+
 // ---------- LIDAR ----------
 int getLidarMM() {
   VL53L0X_RangingMeasurementData_t measure;
@@ -772,31 +337,32 @@ int getLidarMM() {
 
 // ---------- SAFETY CHECK ----------
 bool safetyCheck(String dir) {
-  if (dir == "BACKWARD") {
-    long dist = getUltrasonicCM();
+  server.handleClient();
 
-    // Buzzer ON if distance is above 5cm (object detected)
-    if (dist > 0 && dist > ULTRA_SAFE_CM) {
-      stopMotors();
-      digitalWrite(BUZZER, HIGH);
-
-      while (getUltrasonicCM() > ULTRA_SAFE_CM) {
-        delay(100);
-      }
-
-      digitalWrite(BUZZER, LOW);
-      return false;
-    }
+  if (emergencyStop) {
+    stopMotors();
+    return false;
   }
 
+  // Ultrasonic lift alarm stays active during movement,
+  // including backward movement.
+  checkLiftAlarm();
+
+  // Backward should not be blocked by LiDAR.
+  if (dir == "BACKWARD") {
+    return true;
+  }
+
+  // LiDAR protects only forward movement.
   int lidar = getLidarMM();
 
-  // LIDAR safe distance changed to 500mm
   if (lidar < LIDAR_SAFE_MM) {
     stopMotors();
     beep(500);
 
-    while (getLidarMM() < LIDAR_SAFE_MM) {
+    while (getLidarMM() < LIDAR_SAFE_MM && !emergencyStop) {
+      server.handleClient();
+      checkLiftAlarm();
       delay(100);
     }
 
@@ -809,6 +375,7 @@ bool safetyCheck(String dir) {
 // ---------- EXECUTE ONE COMMAND ----------
 void executeOne(String dir, int dist_cm) {
   if (emergencyStop) {
+    stopMotors();
     return;
   }
 
@@ -816,7 +383,20 @@ void executeOne(String dir, int dist_cm) {
 
   if (dir == "LEFT" || dir == "RIGHT") {
     setDirection(dir, 180);
-    delay(TURN_DURATION);
+
+    unsigned long turnStart = millis();
+    while (millis() - turnStart < TURN_DURATION) {
+      server.handleClient();
+      checkLiftAlarm();
+
+      if (emergencyStop) {
+        stopMotors();
+        return;
+      }
+
+      delay(10);
+    }
+
     stopMotors();
     delay(200);
 
@@ -826,8 +406,21 @@ void executeOne(String dir, int dist_cm) {
     setDirection("FORWARD", 180);
 
     while (millis() - start < duration) {
+      server.handleClient();
+
+      if (emergencyStop) {
+        stopMotors();
+        return;
+      }
+
       if (!safetyCheck("FORWARD")) {
         unsigned long elapsed = millis() - start;
+
+        if (emergencyStop) {
+          stopMotors();
+          return;
+        }
+
         setDirection("FORWARD", 180);
         start = millis() - elapsed;
       }
@@ -842,8 +435,21 @@ void executeOne(String dir, int dist_cm) {
     setDirection(dir, 180);
 
     while (millis() - start < duration) {
+      server.handleClient();
+
+      if (emergencyStop) {
+        stopMotors();
+        return;
+      }
+
       if (!safetyCheck(dir)) {
         unsigned long elapsed = millis() - start;
+
+        if (emergencyStop) {
+          stopMotors();
+          return;
+        }
+
         setDirection(dir, 180);
         start = millis() - elapsed;
       }
@@ -858,17 +464,29 @@ void handleRoot() {
   server.send(200, "text/html", htmlPage);
 }
 
+void handleStop() {
+  emergencyStop = true;
+  stopMotors();
+  digitalWrite(BUZZER, HIGH);
+  delay(150);
+  digitalWrite(BUZZER, LOW);
+  server.send(200, "text/plain", "Emergency stopped.");
+}
+
 void handleExecute() {
   if (!server.hasArg("cmds")) {
     server.send(400, "text/plain", "No commands");
     return;
   }
 
-  server.send(200, "text/plain", "Executing commands...");
+  emergencyStop = false;
+  server.send(200, "text/plain", "Executing...");
 
   String cmds = server.arg("cmds");
 
-  while (cmds.length() > 0) {
+  while (cmds.length() > 0 && !emergencyStop) {
+    server.handleClient();
+
     int comma = cmds.indexOf(',');
     String token = (comma == -1) ? cmds : cmds.substring(0, comma);
     cmds = (comma == -1) ? "" : cmds.substring(comma + 1);
@@ -886,13 +504,11 @@ void handleExecute() {
     delay(200);
   }
 
-  beep(300);
-}
-
-void handleEmergencyStop() {
-  emergencyStop = true;
   stopMotors();
-  server.send(200, "text/plain", "Emergency stop activated");
+
+  if (!emergencyStop) {
+    beep(300);
+  }
 }
 
 // ---------- SETUP ----------
@@ -938,33 +554,20 @@ void setup() {
 
   WiFi.softAP(ssid, password);
 
-  Serial.println("AP started");
+  Serial.println("Nexus AP started");
   Serial.println(WiFi.softAPIP());
 
   server.on("/", handleRoot);
   server.on("/execute", handleExecute);
-  server.on("/emergency-stop", handleEmergencyStop);
+  server.on("/stop", handleStop);
   server.begin();
 
   beep(200);
-  Serial.println("Server started");
+  Serial.println("Nexus server started");
 }
 
 // ---------- LOOP ----------
 void loop() {
   server.handleClient();
-
-  if (emergencyStop) {
-    stopMotors();
-  }
-
-  long dist = getUltrasonicCM();
-
-  // Buzzer ON if ultrasonic detects something above 5cm
-  if (dist > 0 && dist > ULTRA_SAFE_CM) {
-    digitalWrite(BUZZER, HIGH);
-  } 
-  else {
-    digitalWrite(BUZZER, LOW);
-  }
+  checkLiftAlarm();
 }
